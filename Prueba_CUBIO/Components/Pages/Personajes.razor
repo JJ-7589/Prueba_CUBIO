@@ -1,13 +1,14 @@
 ﻿@page "/"
 @page "/personajes"
 @rendermode InteractiveServer
+
 @inject PersonajeService PersonajeService
 @inject IJSRuntime JS
-
+@using System.Text.Json
 
 <div class="container mt-5">
 
-    <!-- TÍTULO -->
+    <!-- Título principal de la página -->
     <div class="mb-4">
         <h1 class="fw-bold">Personajes de Rick y Morty</h1>
         <p class="text-muted fs-5">
@@ -15,18 +16,19 @@
         </p>
     </div>
 
-    <!-- BUSCADOR -->
+    <!-- Barra de búsqueda y filtros -->
     <div class="row mb-4 g-2">
 
+        <!-- Filtro por nombre -->
         <div class="col-12 col-md-4">
             <input class="form-control"
                    placeholder="Nombre"
                    @bind="filtroNombre" />
         </div>
 
+        <!-- Filtro por estado -->
         <div class="col-12 col-md-3">
-            <select class="form-select"
-                    @bind="filtroEstado">
+            <select class="form-select" @bind="filtroEstado">
                 <option value="">Estado</option>
                 <option value="alive">Vivo</option>
                 <option value="dead">Muerto</option>
@@ -34,12 +36,14 @@
             </select>
         </div>
 
+        <!-- Filtro por especie -->
         <div class="col-12 col-md-3">
             <input class="form-control"
                    placeholder="Especie"
                    @bind="filtroEspecie" />
         </div>
 
+        <!-- Botón de búsqueda -->
         <div class="col-12 col-md-2">
             <button class="pill-btn w-100"
                     disabled="@cargando"
@@ -47,82 +51,95 @@
                 🔍 Buscar
             </button>
         </div>
-
     </div>
 
-    <!-- LOADING / VACÍO -->
+    <!-- Contenido principal -->
     @if (cargando)
     {
+        <!-- Mensaje de carga -->
         <p class="text-center fs-5">Cargando...</p>
     }
     else if (personajes.Count == 0)
     {
+        <!-- Mensaje cuando no hay resultados -->
         <p class="text-center text-muted fs-5">
             No hay personajes para mostrar
         </p>
     }
     else
     {
-        <!-- PAGINACIÓN SUPERIOR -->
-        <div class="d-flex justify-content-center align-items-center gap-4 mt-4">
+        <!-- Controles de paginación superior -->
+        <div class="d-flex justify-content-center align-items-center gap-4 mb-4">
 
+            <!-- Botón página anterior -->
             <button class="pill-btn"
                     disabled="@(paginaActual == 1 || cargando)"
                     @onclick="() => CambiarPagina(paginaActual - 1)">
                 ⬅ Anterior
             </button>
 
+            <!-- Indicador de página actual -->
             <span class="fw-bold fs-5">
                 Página @paginaActual
             </span>
 
+            <!-- Botón página siguiente -->
             <button class="pill-btn"
-                    disabled="@(!SiguientePagina || cargando)"
+                    disabled="@(!siguientePagina || cargando)"
                     @onclick="() => CambiarPagina(paginaActual + 1)">
                 Siguiente ➡
             </button>
-
         </div>
-        <br />
-        <br />
 
-        <div class="row g-4 mt-4">
+        <!-- Grid de personajes -->
+        <div class="row g-4">
             @foreach (var p in personajes)
             {
                 <div class="col-12 col-sm-6 col-md-4 col-lg-3">
                     <div class="card character-card h-100">
 
+                        <!-- Imagen del personaje -->
                         <img src="@p.Imagen"
                              class="card-img-top character-img"
                              alt="@p.Nombre" />
 
                         <div class="card-body">
+
+                            <!-- Nombre del personaje -->
                             <h5 class="card-title fw-bold">@p.Nombre</h5>
 
+                            <!-- Estado del personaje -->
                             <p class="mb-1">
                                 <strong>Estado:</strong> @p.Estado
                             </p>
 
+                            <!-- Especie del personaje -->
                             <p class="mb-2">
                                 <strong>Especie:</strong> @p.Especie
                             </p>
 
+                            <!-- Puntaje actual -->
                             <p class="fw-bold text-center mb-3">
                                 Puntaje: @p.Puntaje
                             </p>
 
-                            <div class="d-flex justify-content-between align-items-center">
+                            <!-- Botones de voto -->
+                            <div class="d-flex justify-content-between">
+
+                                <!-- Voto positivo -->
                                 <button class="pill-btn like"
                                         disabled="@(p.Voto == 1)"
                                         @onclick="() => Votar(p, 1)">
                                     👍 Like
                                 </button>
 
+                                <!-- Voto negativo -->
                                 <button class="pill-btn dislike"
                                         disabled="@(p.Voto == -1)"
                                         @onclick="() => Votar(p, -1)">
                                     👎 Dislike
                                 </button>
+
                             </div>
                         </div>
 
@@ -136,38 +153,42 @@
 
 @code {
 
+    // Filtros de búsqueda
     private string filtroNombre = "";
     private string filtroEstado = "";
     private string filtroEspecie = "";
 
+    // Estados de la interfaz
     private bool cargando = false;
-    private bool SiguientePagina = true;
+    private bool siguientePagina = true;
+    private bool jsInicializado = false;
 
+    // Estado de paginación y datos
     private int paginaActual = 1;
-
     private List<PersonajeUi> personajes = new();
 
+    // Carga inicial de la primera página
     protected override async Task OnInitializedAsync()
     {
         await CargarPagina(1);
     }
 
-    async Task Buscar()
+    // Inicialización segura de JavaScript después del renderizado
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        paginaActual = 1;
-        await CargarPagina(1);
+        if (firstRender && !jsInicializado)
+        {
+            jsInicializado = true;
+            await AplicarVotosGuardados();
+            StateHasChanged();
+        }
     }
 
-    async Task CambiarPagina(int nuevaPagina)
-    {
-        if (nuevaPagina < 1 || cargando)
-            return;
-
-        await CargarPagina(nuevaPagina);
-    }
-
+    // Obtiene personajes desde la API según página y filtros
     async Task CargarPagina(int pagina)
     {
+        if (cargando) return;
+
         cargando = true;
 
         try
@@ -185,18 +206,22 @@
                 return;
 
             paginaActual = pagina;
-            SiguientePagina = response.Info?.Next != null;
+            siguientePagina = response.Info?.Next != null;
 
             personajes = response.Resultados.Select(p => new PersonajeUi
             {
                 Id = p.Id,
                 Nombre = p.Nombre,
-                Especie = p.Especie,
                 Estado = p.Estado,
+                Especie = p.Especie,
                 Imagen = p.Imagen
             }).ToList();
 
-            await AplicarVotosGuardados();
+            // Aplica votos guardados si JavaScript ya está disponible
+            if (jsInicializado)
+            {
+                await AplicarVotosGuardados();
+            }
         }
         finally
         {
@@ -204,6 +229,21 @@
         }
     }
 
+    // Cambia la página actual
+    async Task CambiarPagina(int nuevaPagina)
+    {
+        if (nuevaPagina < 1) return;
+        await CargarPagina(nuevaPagina);
+    }
+
+    // Ejecuta la búsqueda reiniciando la paginación
+    async Task Buscar()
+    {
+        paginaActual = 1;
+        await CargarPagina(1);
+    }
+
+    // Registra un voto para un personaje
     async Task Votar(PersonajeUi personaje, int nuevoVoto)
     {
         personaje.Puntaje -= personaje.Voto;
@@ -213,6 +253,35 @@
         await GuardarVoto(personaje.Id, nuevoVoto);
     }
 
+    // Guarda los votos en localStorage
+    async Task GuardarVoto(int id, int voto)
+    {
+        var votos = await ObtenerVotos();
+        votos[id] = voto;
+
+        await JS.InvokeVoidAsync(
+            "localStorage.setItem",
+            "personaje-votos",
+            JsonSerializer.Serialize(votos)
+        );
+    }
+
+    // Obtiene los votos almacenados localmente
+    async Task<Dictionary<int, int>> ObtenerVotos()
+    {
+        var json = await JS.InvokeAsync<string>(
+            "localStorage.getItem",
+            "personaje-votos"
+        );
+
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<int, int>();
+
+        return JsonSerializer.Deserialize<Dictionary<int, int>>(json)
+               ?? new Dictionary<int, int>();
+    }
+
+    // Aplica los votos guardados a los personajes cargados
     async Task AplicarVotosGuardados()
     {
         var votos = await ObtenerVotos();
@@ -227,40 +296,14 @@
         }
     }
 
-    async Task GuardarVoto(int id, int voto)
-    {
-        var votos = await ObtenerVotos();
-        votos[id] = voto;
-
-        await JS.InvokeVoidAsync(
-            "localStorage.setItem",
-            "personaje-votos",
-            JsonSerializer.Serialize(votos)
-        );
-    }
-
-    async Task<Dictionary<int, int>> ObtenerVotos()
-    {
-        var json = await JS.InvokeAsync<string>(
-            "localStorage.getItem",
-            "personaje-votos"
-        );
-
-        if (string.IsNullOrWhiteSpace(json))
-            return new();
-
-        return JsonSerializer.Deserialize<Dictionary<int, int>>(json)
-               ?? new();
-    }
-
+    // Modelo de personaje para la interfaz
     class PersonajeUi
     {
         public int Id { get; set; }
         public string Nombre { get; set; } = "";
-        public string Especie { get; set; } = "";
         public string Estado { get; set; } = "";
+        public string Especie { get; set; } = "";
         public string Imagen { get; set; } = "";
-
         public int Puntaje { get; set; }
         public int Voto { get; set; }
     }
