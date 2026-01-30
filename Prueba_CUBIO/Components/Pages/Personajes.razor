@@ -1,0 +1,267 @@
+﻿@page "/"
+@page "/personajes"
+@rendermode InteractiveServer
+@inject PersonajeService PersonajeService
+@inject IJSRuntime JS
+
+
+<div class="container mt-5">
+
+    <!-- TÍTULO -->
+    <div class="mb-4">
+        <h1 class="fw-bold">Personajes de Rick y Morty</h1>
+        <p class="text-muted fs-5">
+            Explora los personajes y conoce su estado actual, puedes dar like a tus favoritos
+        </p>
+    </div>
+
+    <!-- BUSCADOR -->
+    <div class="row mb-4 g-2">
+
+        <div class="col-12 col-md-4">
+            <input class="form-control"
+                   placeholder="Nombre"
+                   @bind="filtroNombre" />
+        </div>
+
+        <div class="col-12 col-md-3">
+            <select class="form-select"
+                    @bind="filtroEstado">
+                <option value="">Estado</option>
+                <option value="alive">Vivo</option>
+                <option value="dead">Muerto</option>
+                <option value="unknown">Desconocido</option>
+            </select>
+        </div>
+
+        <div class="col-12 col-md-3">
+            <input class="form-control"
+                   placeholder="Especie"
+                   @bind="filtroEspecie" />
+        </div>
+
+        <div class="col-12 col-md-2">
+            <button class="pill-btn w-100"
+                    disabled="@cargando"
+                    @onclick="Buscar">
+                🔍 Buscar
+            </button>
+        </div>
+
+    </div>
+
+    <!-- LOADING / VACÍO -->
+    @if (cargando)
+    {
+        <p class="text-center fs-5">Cargando...</p>
+    }
+    else if (personajes.Count == 0)
+    {
+        <p class="text-center text-muted fs-5">
+            No hay personajes para mostrar
+        </p>
+    }
+    else
+    {
+        <!-- PAGINACIÓN SUPERIOR -->
+        <div class="d-flex justify-content-center align-items-center gap-4 mt-4">
+
+            <button class="pill-btn"
+                    disabled="@(paginaActual == 1 || cargando)"
+                    @onclick="() => CambiarPagina(paginaActual - 1)">
+                ⬅ Anterior
+            </button>
+
+            <span class="fw-bold fs-5">
+                Página @paginaActual
+            </span>
+
+            <button class="pill-btn"
+                    disabled="@(!SiguientePagina || cargando)"
+                    @onclick="() => CambiarPagina(paginaActual + 1)">
+                Siguiente ➡
+            </button>
+
+        </div>
+        <br />
+        <br />
+
+        <div class="row g-4 mt-4">
+            @foreach (var p in personajes)
+            {
+                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                    <div class="card character-card h-100">
+
+                        <img src="@p.Imagen"
+                             class="card-img-top character-img"
+                             alt="@p.Nombre" />
+
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold">@p.Nombre</h5>
+
+                            <p class="mb-1">
+                                <strong>Estado:</strong> @p.Estado
+                            </p>
+
+                            <p class="mb-2">
+                                <strong>Especie:</strong> @p.Especie
+                            </p>
+
+                            <p class="fw-bold text-center mb-3">
+                                Puntaje: @p.Puntaje
+                            </p>
+
+                            <div class="d-flex justify-content-between align-items-center">
+                                <button class="pill-btn like"
+                                        disabled="@(p.Voto == 1)"
+                                        @onclick="() => Votar(p, 1)">
+                                    👍 Like
+                                </button>
+
+                                <button class="pill-btn dislike"
+                                        disabled="@(p.Voto == -1)"
+                                        @onclick="() => Votar(p, -1)">
+                                    👎 Dislike
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+</div>
+
+@code {
+
+    private string filtroNombre = "";
+    private string filtroEstado = "";
+    private string filtroEspecie = "";
+
+    private bool cargando = false;
+    private bool SiguientePagina = true;
+
+    private int paginaActual = 1;
+
+    private List<PersonajeUi> personajes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarPagina(1);
+    }
+
+    async Task Buscar()
+    {
+        paginaActual = 1;
+        await CargarPagina(1);
+    }
+
+    async Task CambiarPagina(int nuevaPagina)
+    {
+        if (nuevaPagina < 1 || cargando)
+            return;
+
+        await CargarPagina(nuevaPagina);
+    }
+
+    async Task CargarPagina(int pagina)
+    {
+        cargando = true;
+
+        try
+        {
+            var response = await PersonajeService.ObtenerPersonajes(
+                pagina,
+                filtroNombre,
+                filtroEspecie,
+                filtroEstado
+            );
+
+            personajes.Clear();
+
+            if (response?.Resultados == null)
+                return;
+
+            paginaActual = pagina;
+            SiguientePagina = response.Info?.Next != null;
+
+            personajes = response.Resultados.Select(p => new PersonajeUi
+            {
+                Id = p.Id,
+                Nombre = p.Nombre,
+                Especie = p.Especie,
+                Estado = p.Estado,
+                Imagen = p.Imagen
+            }).ToList();
+
+            await AplicarVotosGuardados();
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    async Task Votar(PersonajeUi personaje, int nuevoVoto)
+    {
+        personaje.Puntaje -= personaje.Voto;
+        personaje.Voto = nuevoVoto;
+        personaje.Puntaje += nuevoVoto;
+
+        await GuardarVoto(personaje.Id, nuevoVoto);
+    }
+
+    async Task AplicarVotosGuardados()
+    {
+        var votos = await ObtenerVotos();
+
+        foreach (var p in personajes)
+        {
+            if (votos.TryGetValue(p.Id, out var voto))
+            {
+                p.Voto = voto;
+                p.Puntaje = voto;
+            }
+        }
+    }
+
+    async Task GuardarVoto(int id, int voto)
+    {
+        var votos = await ObtenerVotos();
+        votos[id] = voto;
+
+        await JS.InvokeVoidAsync(
+            "localStorage.setItem",
+            "personaje-votos",
+            JsonSerializer.Serialize(votos)
+        );
+    }
+
+    async Task<Dictionary<int, int>> ObtenerVotos()
+    {
+        var json = await JS.InvokeAsync<string>(
+            "localStorage.getItem",
+            "personaje-votos"
+        );
+
+        if (string.IsNullOrWhiteSpace(json))
+            return new();
+
+        return JsonSerializer.Deserialize<Dictionary<int, int>>(json)
+               ?? new();
+    }
+
+    class PersonajeUi
+    {
+        public int Id { get; set; }
+        public string Nombre { get; set; } = "";
+        public string Especie { get; set; } = "";
+        public string Estado { get; set; } = "";
+        public string Imagen { get; set; } = "";
+
+        public int Puntaje { get; set; }
+        public int Voto { get; set; }
+    }
+}
