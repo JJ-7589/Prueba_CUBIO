@@ -95,15 +95,3 @@ Decisiones técnicas:
 
 Una sola llamada a la API por acción: mejor rendimiento y claridad
 
-Posibles mejoras futuras:
-  Página de favoritos
-
-  Quitar voto
-
-  Manejo visual de errores de la API
-
-  Cache de resultados
-
-  Autenticación de usuarios
-
-  Backend propio para persistencia global
